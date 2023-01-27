@@ -33,6 +33,7 @@
 
 #include <ros/ros.h>
 #include <sensor_msgs/NavSatFix.h>
+#include <sensor_msgs/Imu.h>
 #include <geometry_msgs/Vector3Stamped.h>
 #include <hector_gazebo_plugins/SetReferenceGeoPose.h>
 #include <hector_gazebo_plugins/sensor_model.h>
@@ -74,10 +75,12 @@ private:
   ros::NodeHandle* node_handle_;
   ros::Publisher fix_publisher_;
   ros::Publisher velocity_publisher_;
+  ros::Publisher heading_publisher_;
 
   ros::ServiceServer set_geopose_srv_;
 
   sensor_msgs::NavSatFix fix_;
+  sensor_msgs::Imu imu_;
   geometry_msgs::Vector3Stamped velocity_;
 
   std::string namespace_;
@@ -85,6 +88,7 @@ private:
   std::string frame_id_;
   std::string fix_topic_;
   std::string velocity_topic_;
+  std::string heading_topic_;
 
   double reference_latitude_;
   double reference_longitude_;
@@ -96,6 +100,7 @@ private:
 
   SensorModel3 position_error_model_;
   SensorModel3 velocity_error_model_;
+  SensorModel yaw_model_;
 
   UpdateTimer updateTimer;
   event::ConnectionPtr updateConnection;

@@ -124,6 +124,9 @@ void GazeboRosGps::Load(physics::ModelPtr _model, sdf::ElementPtr _sdf)
   if (_sdf->HasElement("velocityTopicName"))
     velocity_topic_ = _sdf->GetElement("velocityTopicName")->GetValue()->GetAsString();
 
+  if (_sdf->HasElement("headingTopicName"))
+    heading_topic_ = _sdf->GetElement("headingTopicName")->GetValue()->GetAsString();
+
   if (_sdf->HasElement("referenceLatitude"))
     _sdf->GetElement("referenceLatitude")->GetValue()->Get(reference_latitude_);
 
@@ -151,10 +154,12 @@ void GazeboRosGps::Load(physics::ModelPtr _model, sdf::ElementPtr _sdf)
 
 
   fix_.header.frame_id = frame_id_;
+  imu_.header.frame_id = frame_id_;
   velocity_.header.frame_id = frame_id_;
 
   position_error_model_.Load(_sdf);
   velocity_error_model_.Load(_sdf, "velocity");
+  yaw_model_.Load(_sdf, "yaw");
 
   // calculate earth radii
   double temp = 1.0 / (1.0 - excentrity2 * sin(reference_latitude_ * M_PI/180.0) * sin(reference_latitude_ * M_PI/180.0));
@@ -173,6 +178,7 @@ void GazeboRosGps::Load(physics::ModelPtr _model, sdf::ElementPtr _sdf)
   node_handle_ = new ros::NodeHandle(namespace_);
   fix_publisher_ = node_handle_->advertise<sensor_msgs::NavSatFix>(fix_topic_, 10);
   velocity_publisher_ = node_handle_->advertise<geometry_msgs::Vector3Stamped>(velocity_topic_, 10);
+  heading_publisher_ = node_handle_->advertise<sensor_msgs::Imu>(heading_topic_, 10);
 
   set_geopose_srv_ = node_handle_->advertiseService(fix_topic_ + "/set_reference_geopose", &GazeboRosGps::setGeoposeCb, this);
 
@@ -217,6 +223,7 @@ void GazeboRosGps::Reset()
   updateTimer.Reset();
   position_error_model_.reset();
   velocity_error_model_.reset();
+  yaw_model_.reset();
 }
 
 void GazeboRosGps::dynamicReconfigureCallback(GazeboRosGps::GNSSConfig &config, uint32_t level)
@@ -251,11 +258,21 @@ void GazeboRosGps::Update()
 #if (GAZEBO_MAJOR_VERSION >= 8)
   common::Time sim_time = world->SimTime();
   double dt = updateTimer.getTimeSinceLastUpdate().Double();
+  yaw_model_.update(dt);
 
   ignition::math::Pose3d pose = link->WorldPose();
-
   ignition::math::Vector3d velocity = velocity_error_model_(link->WorldLinearVel(), dt);
   ignition::math::Vector3d position = position_error_model_(pose.Pos(), dt);
+
+  ignition::math::Quaterniond orientation = pose.Rot();
+  double yaw_error = yaw_model_.getCurrentBias();
+  ignition::math::Quaterniond orientationError(
+    ignition::math::Quaterniond(cos(yaw_error/2), 0.0, 0.0, sin(yaw_error/2))); // yaw error
+    // removed roll and pitch error since moving base only provides the heading (yaw)
+    /*     
+    * ignition::math::Quaterniond(1.0, 0.5 * accelDrift.Y() / gravity_length, 0.5 * -accelDrift.X() / gravity_length, 0.0)  // roll and pitch error 
+    
+    */
 #else
   common::Time sim_time = world->GetSimTime();
   double dt = updateTimer.getTimeSinceLastUpdate().Double();
@@ -265,13 +282,15 @@ void GazeboRosGps::Update()
   gazebo::math::Vector3 velocity = velocity_error_model_(link->GetWorldLinearVel(), dt);
   gazebo::math::Vector3 position = position_error_model_(pose.pos, dt);
 #endif
-
+  orientationError.Normalize();
+  orientation = orientationError * orientation;
   // An offset error in the velocity is integrated into the position error for the next timestep.
   // Note: Usually GNSS receivers have almost no drift in the velocity signal.
   position_error_model_.setCurrentDrift(position_error_model_.getCurrentDrift() + dt * velocity_error_model_.getCurrentDrift());
 
   fix_.header.stamp = ros::Time(sim_time.sec, sim_time.nsec);
   velocity_.header.stamp = fix_.header.stamp;
+  imu_.header.stamp = fix_.header.stamp;
 
 #if (GAZEBO_MAJOR_VERSION >= 8)
   fix_.latitude  = reference_latitude_  + ( cos(reference_heading_) * position.X() + sin(reference_heading_) * position.Y()) / radius_north_ * 180.0/M_PI;
@@ -285,6 +304,16 @@ void GazeboRosGps::Update()
   fix_.position_covariance[0] = position_error_model_.drift.X()*position_error_model_.drift.X() + position_error_model_.gaussian_noise.X()*position_error_model_.gaussian_noise.X();
   fix_.position_covariance[4] = position_error_model_.drift.Y()*position_error_model_.drift.Y() + position_error_model_.gaussian_noise.Y()*position_error_model_.gaussian_noise.Y();
   fix_.position_covariance[8] = position_error_model_.drift.Z()*position_error_model_.drift.Z() + position_error_model_.gaussian_noise.Z()*position_error_model_.gaussian_noise.Z();
+
+  imu_.linear_acceleration_covariance[0] = -1;
+  imu_.angular_velocity_covariance[0] = -1;
+  // using std-dev of gaussian kernel of sensor model for yaw covariance for now:
+  imu_.orientation_covariance[8] = pow(yaw_model_.gaussian_noise, 2);
+
+  imu_.orientation.x = orientation.X();
+  imu_.orientation.y = orientation.Y();
+  imu_.orientation.z = orientation.Z();
+  imu_.orientation.w = orientation.W();
 #else
   fix_.latitude  = reference_latitude_  + ( cos(reference_heading_) * position.x + sin(reference_heading_) * position.y) / radius_north_ * 180.0/M_PI;
   fix_.longitude = reference_longitude_ - (-sin(reference_heading_) * position.x + cos(reference_heading_) * position.y) / radius_east_  * 180.0/M_PI;
@@ -301,6 +330,7 @@ void GazeboRosGps::Update()
 
   fix_publisher_.publish(fix_);
   velocity_publisher_.publish(velocity_);
+  heading_publisher_.publish(imu_);
 }
 
 // Register this plugin with the simulator

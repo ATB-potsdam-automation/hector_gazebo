@@ -86,9 +86,9 @@ add_library(hector_gazebo_ros_magnetic SHARED src/gazebo_ros_magnetic.cpp)
 target_link_libraries(hector_gazebo_ros_magnetic ${GAZEBO_LIBRARIES} ${catkin_LIBRARIES})
 add_dependencies(hector_gazebo_ros_magnetic ${PROJECT_NAME}_gencfg)
 
-add_library(hector_gazebo_ros_gps SHARED src/gazebo_ros_gps.cpp)
-target_link_libraries(hector_gazebo_ros_gps ${GAZEBO_LIBRARIES} ${catkin_LIBRARIES})
-add_dependencies(hector_gazebo_ros_gps ${PROJECT_NAME}_generate_messages_cpp ${PROJECT_NAME}_gencfg)
+add_library(hoftrac_gazebo_ros_gps SHARED src/gazebo_ros_gps.cpp)
+target_link_libraries(hoftrac_gazebo_ros_gps ${GAZEBO_LIBRARIES} ${catkin_LIBRARIES})
+add_dependencies(hoftrac_gazebo_ros_gps ${PROJECT_NAME}_generate_messages_cpp ${PROJECT_NAME}_gencfg)
 
 add_library(hector_gazebo_ros_sonar SHARED src/gazebo_ros_sonar.cpp)
 target_link_libraries(hector_gazebo_ros_sonar ${GAZEBO_LIBRARIES} ${catkin_LIBRARIES})
@@ -117,7 +117,7 @@ install(TARGETS
   hector_gazebo_reset_plugin
   hector_gazebo_ros_imu
   hector_gazebo_ros_magnetic
-  hector_gazebo_ros_gps
+  hoftrac_gazebo_ros_gps
   hector_gazebo_ros_sonar
   hector_servo_plugin
   ARCHIVE DESTINATION ${CATKIN_PACKAGE_LIB_DESTINATION}
